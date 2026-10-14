@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // Immediately unregister foreign service workers (from other local projects on port 5173)
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then(function(registrations) {
+          var hadRegistration = registrations.length > 0;
+          for (var i = 0; i < registrations.length; i++) {
+            registrations[i].unregister();
+          }
+          if ('caches' in window) {
+            caches.keys().then(function(keys) {
+              for (var j = 0; j < keys.length; j++) {
+                caches.delete(keys[j]);
+              }
+            });
+          }
+          if (hadRegistration && navigator.serviceWorker.controller && !sessionStorage.getItem('__sw_purged')) {
+            sessionStorage.setItem('__sw_purged', '1');
+            window.location.reload();
+          }
+        });
+      }
+    </script>
+    <meta name="theme-color" content="#1f3b45" />
+    <link rel="apple-touch-icon" href="/company/svarp-logo-192.webp" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="SVARP Exam Portal" />
+    <link rel="icon" type="image/webp" href="/company/svarp-logo-192.webp" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ASSESSMENT PORTAL | SVARP GLOBAL</title>
+    <meta
+      name="description"
+      content="Secure, high-integrity examination portal with real-time session tracking, randomized papers, and automated evaluation."
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Pacifico&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              primary: "#9bcf9b",
+              accent: "#1f3b45",
+              muted: "#f4f7f6",
+              secondary: "#1f3b45",
+              white: "#ffffff",
+              dark: "#1c1d1f",
+            },
+            fontFamily: {
+              sans: ["Inter", "sans-serif"],
+              serif: ["Inter", "serif"],
+              signature: ["Pacifico", "cursive"],
+            },
+          },
+        },
+      };
+    </script>
+  </head>
+  <body class="bg-[#f8fafc] text-slate-900 font-sans antialiased min-h-screen">
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>

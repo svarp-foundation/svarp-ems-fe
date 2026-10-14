@@ -1,0 +1,249 @@
+/* Admin Attempts & Resumption Management Styles */
+.attempts-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.attempts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.attempts-title h2 {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin-bottom: 0.25rem;
+}
+
+.attempts-title p {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.attempts-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  background-color: var(--color-bg-secondary);
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  flex-wrap: wrap;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+}
+
+.filter-select {
+  background-color: var(--color-bg-tertiary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.filter-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  user-select: none;
+}
+
+.filter-toggle-label input[type="checkbox"] {
+  accent-color: var(--color-danger);
+  width: 16px;
+  height: 16px;
+}
+
+/* Attempts Grid / Cards */
+.attempts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 1.25rem;
+}
+
+.attempt-card {
+  background-color: var(--color-bg-secondary);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--color-border);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  transition: var(--transition-normal);
+  position: relative;
+}
+
+.attempt-card:hover {
+  border-color: var(--color-border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.attempt-card.locked {
+  border-color: rgba(239, 68, 68, 0.5);
+  background: linear-gradient(180deg, rgba(239, 68, 68, 0.05) 0%, var(--color-bg-secondary) 100%);
+}
+
+.attempt-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.attempt-student-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.student-email {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--color-text-primary);
+}
+
+.exam-name-tag {
+  font-size: 0.8rem;
+  color: var(--color-primary-light);
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+/* Progress bar inside card */
+.attempt-progress-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--color-text-secondary);
+}
+
+.progress-track {
+  height: 6px;
+  background-color: var(--color-bg-tertiary);
+  border-radius: var(--radius-full);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-success));
+  border-radius: var(--radius-full);
+  transition: width 0.3s ease;
+}
+
+/* Attempt Timing */
+.attempt-time-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  background: var(--color-bg-tertiary);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+}
+
+/* Interruption Reason Alert */
+.interruption-alert-box {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.interruption-alert-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  color: var(--color-danger);
+  margin-bottom: 0.25rem;
+}
+
+.interruption-alert-text {
+  color: #fca5a5;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+/* Pending Resumption Request Box */
+.resumption-request-box {
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.resumption-request-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  color: var(--color-warning);
+  margin-bottom: 0.25rem;
+}
+
+.resumption-request-text {
+  color: #fde68a;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+/* Card Actions */
+.attempt-card-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+/* Empty State */
+.attempts-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--color-bg-secondary);
+  border-radius: var(--radius-xl);
+  border: 1px dashed var(--color-border);
+}
+
+.attempts-empty-icon {
+  font-size: 3rem;
+  margin-bottom: 1rem;
+}
+
+.attempts-empty-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin-bottom: 0.5rem;
+}
+
+.attempts-empty-desc {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
