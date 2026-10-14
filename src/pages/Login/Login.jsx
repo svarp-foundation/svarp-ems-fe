@@ -5,7 +5,6 @@ import { isAdminUser } from '../../components/ProtectedRoute';
 import {
   Eye,
   EyeOff,
-  Shield,
   AlertTriangle,
   KeyRound,
   X,
@@ -143,15 +142,10 @@ export const Login = () => {
                 EXAMINATION PORTAL
               </span>
             </div>
-
-            <div className="inline-flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-medium border border-slate-200">
-              <Shield size={12} className="text-emerald-600" />
-              <span>Single Session Protected</span>
-            </div>
           </div>
 
           <h2 className="text-sm font-bold text-slate-900 mb-5 text-center">
-            Sign in to Assessment &amp; Evaluation Studio
+            Sign in to Exam Portal
           </h2>
 
           {errorMessage && (
@@ -202,7 +196,7 @@ export const Login = () => {
               </label>
               <input
                 type="email"
-                placeholder="candidate@svarp.org or admin@svarp.org"
+                placeholder="candidate@svarp.org"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:border-[#1f3b45] focus:ring-1 focus:ring-[#1f3b45] text-slate-800 placeholder-slate-400 font-medium transition-all text-xs shadow-2xs"
@@ -254,7 +248,7 @@ export const Login = () => {
 
           <div className="mt-6 pt-4 border-t border-slate-100 text-center">
             <p className="text-[11px] text-slate-400 font-medium">
-              Powered by SVARP Central Identity Services
+              Design &amp; developed by iNexarum Private Limited
             </p>
           </div>
         </div>
