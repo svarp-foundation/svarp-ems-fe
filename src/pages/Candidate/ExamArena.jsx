@@ -77,13 +77,14 @@ export const ExamArena = () => {
 
     const handleVisibilityChange = async () => {
       if (document.hidden && !isLocked) {
+        setIsLocked(true);
+        setLockReason('Security Violation: Window focus loss / tab switch detected');
         try {
           const res = await api.logExamEvent(attempt.attempt_id, {
             event_type: 'tab_switch',
             details: { timestamp: new Date().toISOString() },
           });
-          if (res.is_locked) {
-            setIsLocked(true);
+          if (res.lock_reason) {
             setLockReason(res.lock_reason);
           }
         } catch (err) {
@@ -94,13 +95,14 @@ export const ExamArena = () => {
 
     const handleFullscreenChange = async () => {
       if (!document.fullscreenElement && !isLocked && !isSubmitted) {
+        setIsLocked(true);
+        setLockReason('Security Violation: Fullscreen mode exited');
         try {
           const res = await api.logExamEvent(attempt.attempt_id, {
             event_type: 'fullscreen_exit',
             details: { timestamp: new Date().toISOString() },
           });
-          if (res.is_locked) {
-            setIsLocked(true);
+          if (res.lock_reason) {
             setLockReason(res.lock_reason);
           }
         } catch (err) {

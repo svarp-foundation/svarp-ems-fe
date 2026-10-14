@@ -20,6 +20,13 @@ import {
   Clock,
   Shuffle,
   Percent,
+  UploadCloud,
+  Download,
+  FileSpreadsheet,
+  UserCheck,
+  Edit3,
+  Award,
+  Info,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -32,8 +39,10 @@ export const Exams = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  // Create Exam Modal
+  // Create / Edit Exam Modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [editingExamId, setEditingExamId] = useState(null);
+  const [editingExam, setEditingExam] = useState(null);
   const [formError, setFormError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
@@ -64,6 +73,13 @@ export const Exams = () => {
   const [enrollments, setEnrollments] = useState([]);
   const [studentEmail, setStudentEmail] = useState('');
   const [isEnrolling, setIsEnrolling] = useState(false);
+
+  // Candidate Batch File Upload & Validation
+  const [enrollTab, setEnrollTab] = useState('list'); // 'list' | 'upload'
+  const [candidateFile, setCandidateFile] = useState(null);
+  const [isValidatingCandidateFile, setIsValidatingCandidateFile] = useState(false);
+  const [candidateValidationResult, setCandidateValidationResult] = useState(null);
+  const [isBatchEnrolling, setIsBatchEnrolling] = useState(false);
 
   // Simulated Paper Preview Modal
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
@@ -152,7 +168,54 @@ export const Exams = () => {
     });
   };
 
+  const calculateTotalEstimatedMarks = () => {
+    const defaultM = Number(formData.default_marks_per_question) || 1.0;
+    if (!formData.exam_streams || formData.exam_streams.length === 0) {
+      return ((formData.total_questions || 0) * defaultM).toFixed(1);
+    }
+    const total = formData.exam_streams.reduce((acc, es) => {
+      const qCount = Number(es.question_count) || 0;
+      const m =
+        es.marks_per_question !== '' &&
+        es.marks_per_question !== null &&
+        es.marks_per_question !== undefined
+          ? Number(es.marks_per_question)
+          : defaultM;
+      return acc + qCount * m;
+    }, 0);
+    return Number(total).toFixed(1);
+  };
+
+  const handleStreamMarksChange = (streamId, field, val) => {
+    setFormData((prev) => ({
+      ...prev,
+      exam_streams: prev.exam_streams.map((es) => {
+        if (es.stream_id !== streamId) return es;
+        return {
+          ...es,
+          [field]: val === '' ? null : val,
+        };
+      }),
+    }));
+  };
+
+  const canEditExam = (row) => {
+    if (!row) return false;
+    if (['in_progress', 'completed', 'cancelled'].includes(row.status)) {
+      return false;
+    }
+    if (row.start_time) {
+      const startTime = new Date(row.start_time).getTime();
+      if (!isNaN(startTime) && Date.now() >= startTime) {
+        return false;
+      }
+    }
+    return true;
+  };
+
   const handleOpenCreate = () => {
+    setEditingExamId(null);
+    setEditingExam(null);
     const now = new Date();
     const defaultStart = formatLocalDateTime(new Date(now.getTime() + 60 * 60 * 1000));
     const defaultEnd = formatLocalDateTime(new Date(now.getTime() + 4 * 60 * 60 * 1000));
@@ -195,6 +258,70 @@ export const Exams = () => {
       pass_percentage: 40.0,
       instructions: 'Review instructions carefully before starting.',
       exam_streams: initialStreams,
+    });
+    setFormError(null);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleOpenEdit = (exam) => {
+    setEditingExamId(exam.id);
+    setEditingExam(exam);
+    const defaultTotalQuestions = exam.total_questions || 20;
+
+    const mappedStreams = (exam.exam_streams || []).map((es) => ({
+      stream_id: es.stream_id,
+      stream_code: es.stream_code || '',
+      stream_name: es.stream_name || '',
+      question_count: es.question_count || 0,
+      marks_per_question:
+        es.marks_per_question !== null && es.marks_per_question !== undefined
+          ? es.marks_per_question
+          : null,
+      negative_marks:
+        es.negative_marks !== null && es.negative_marks !== undefined
+          ? es.negative_marks
+          : null,
+      difficulty_quotas: (es.difficulty_quotas || []).map((dq) => ({
+        difficulty: dq.difficulty.toLowerCase(),
+        quota_count: dq.quota_count || 0,
+        quota_percentage: dq.quota_percentage || 0,
+      })),
+    }));
+
+    // Derive difficulty percentage breakdown from first stream or overall
+    let easyPct = 40;
+    let medPct = 40;
+    let hardPct = 20;
+    if (mappedStreams.length > 0 && mappedStreams[0].difficulty_quotas.length > 0) {
+      const eq = mappedStreams[0].difficulty_quotas.find((q) => q.difficulty === 'easy')?.quota_count || 0;
+      const mq = mappedStreams[0].difficulty_quotas.find((q) => q.difficulty === 'medium')?.quota_count || 0;
+      const hq = mappedStreams[0].difficulty_quotas.find((q) => q.difficulty === 'hard')?.quota_count || 0;
+      const sumQ = eq + mq + hq;
+      if (sumQ > 0) {
+        easyPct = Math.round((eq / sumQ) * 100);
+        medPct = Math.round((mq / sumQ) * 100);
+        hardPct = Math.max(0, 100 - easyPct - medPct);
+      }
+    }
+
+    setFormData({
+      title: exam.title || '',
+      description: exam.description || '',
+      start_time: exam.start_time ? formatLocalDateTime(new Date(exam.start_time)) : '',
+      end_time: exam.end_time ? formatLocalDateTime(new Date(exam.end_time)) : '',
+      entry_cutoff_minutes: exam.entry_cutoff_minutes ?? 15,
+      duration_minutes: exam.duration_minutes ?? 60,
+      total_questions: defaultTotalQuestions,
+      easy_percentage: easyPct,
+      medium_percentage: medPct,
+      hard_percentage: hardPct,
+      default_marks_per_question: exam.default_marks_per_question ?? 1.0,
+      default_negative_marks: exam.default_negative_marks ?? 0.25,
+      shuffle_questions: exam.shuffle_questions ?? true,
+      shuffle_options: exam.shuffle_options ?? true,
+      pass_percentage: exam.pass_percentage ?? 40.0,
+      instructions: exam.instructions || '',
+      exam_streams: mappedStreams,
     });
     setFormError(null);
     setIsCreateModalOpen(true);
@@ -407,11 +534,20 @@ export const Exams = () => {
       }
     }
 
+    if (Number(formData.default_marks_per_question) <= 0) {
+      setFormError('Default marks per question must be greater than 0');
+      return;
+    }
+    if (Number(formData.default_negative_marks) < 0) {
+      setFormError('Default negative marks cannot be negative');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const payload = {
-        title: formData.title,
-        description: formData.description,
+        title: formData.title.trim(),
+        description: formData.description?.trim() || null,
         start_time: new Date(formData.start_time).toISOString(),
         end_time: new Date(formData.end_time).toISOString(),
         entry_cutoff_minutes: Number(formData.entry_cutoff_minutes),
@@ -420,18 +556,31 @@ export const Exams = () => {
         easy_percentage: Number(formData.easy_percentage),
         medium_percentage: Number(formData.medium_percentage),
         hard_percentage: Number(formData.hard_percentage),
-        default_marks_per_question: Number(formData.default_marks_per_question),
-        default_negative_marks: Number(formData.default_negative_marks),
-        shuffle_questions: formData.shuffle_questions,
-        shuffle_options: formData.shuffle_options,
+        default_marks_per_question: Number(formData.default_marks_per_question) || 1.0,
+        default_negative_marks:
+          formData.default_negative_marks !== '' && formData.default_negative_marks !== null
+            ? Number(formData.default_negative_marks)
+            : 0.0,
+        shuffle_questions: Boolean(formData.shuffle_questions),
+        shuffle_options: Boolean(formData.shuffle_options),
         pass_percentage: Number(formData.pass_percentage),
-        instructions: formData.instructions,
+        instructions: formData.instructions?.trim() || null,
         exam_streams: formData.exam_streams.map((es) => ({
           stream_id: es.stream_id,
           allocation_mode: 'count',
           question_count: es.question_count,
-          marks_per_question: es.marks_per_question,
-          negative_marks: es.negative_marks,
+          marks_per_question:
+            es.marks_per_question !== '' &&
+            es.marks_per_question !== null &&
+            es.marks_per_question !== undefined
+              ? Number(es.marks_per_question)
+              : null,
+          negative_marks:
+            es.negative_marks !== '' &&
+            es.negative_marks !== null &&
+            es.negative_marks !== undefined
+              ? Number(es.negative_marks)
+              : null,
           difficulty_quotas: es.difficulty_quotas.map((dq) => ({
             difficulty: dq.difficulty,
             quota_mode: 'count',
@@ -440,11 +589,21 @@ export const Exams = () => {
         })),
       };
 
-      await api.createExam(payload);
+      if (editingExamId) {
+        await api.updateExam(editingExamId, payload);
+        toast.success('Exam paper and marking scheme updated successfully');
+      } else {
+        await api.createExam(payload);
+        toast.success('Exam paper created successfully');
+      }
+
       setIsCreateModalOpen(false);
+      setEditingExamId(null);
       fetchExams();
     } catch (err) {
-      setFormError(err.message || 'Failed to create exam');
+      setFormError(
+        err.message || (editingExamId ? 'Failed to update exam' : 'Failed to create exam')
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -480,11 +639,72 @@ export const Exams = () => {
   const handleOpenEnrollments = async (exam) => {
     setEnrollingExam(exam);
     setIsEnrollModalOpen(true);
+    setEnrollTab('list');
+    setCandidateFile(null);
+    setCandidateValidationResult(null);
     try {
       const list = await api.getExamEnrollments(exam.id);
       setEnrollments(list || []);
     } catch (err) {
       console.error('Failed to load enrollments:', err);
+    }
+  };
+
+  const handleDownloadCandidateTemplate = async () => {
+    try {
+      await api.downloadCandidateTemplate();
+      toast.success('Sample candidate enrollment template downloaded');
+    } catch (err) {
+      toast.error(err.message || 'Failed to download sample template');
+    }
+  };
+
+  const handleCandidateFileSelect = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCandidateFile(file);
+    setCandidateValidationResult(null);
+    if (!enrollingExam) return;
+
+    setIsValidatingCandidateFile(true);
+    try {
+      const res = await api.validateCandidateFile(enrollingExam.id, file);
+      setCandidateValidationResult(res);
+      if (res.valid_count > 0) {
+        toast.success(`Processed file: ${res.valid_count} valid candidate(s) ready to enroll`);
+      } else if (res.already_enrolled_count > 0) {
+        toast.info(`All ${res.already_enrolled_count} candidate(s) are already enrolled`);
+      } else {
+        toast.warning('No valid candidates found in this file');
+      }
+    } catch (err) {
+      toast.error(err.message || 'Failed to validate candidate file');
+      setCandidateValidationResult(null);
+    } finally {
+      setIsValidatingCandidateFile(false);
+    }
+  };
+
+  const handleBatchEnroll = async () => {
+    if (!enrollingExam || !candidateValidationResult?.valid_candidates?.length) return;
+    setIsBatchEnrolling(true);
+    try {
+      const studentsToEnroll = candidateValidationResult.valid_candidates.map((c) => ({
+        student_email: c.email,
+        student_id: c.user_id,
+      }));
+      await api.enrollStudents(enrollingExam.id, studentsToEnroll);
+      toast.success(`Successfully enrolled ${studentsToEnroll.length} candidate(s)!`);
+      const list = await api.getExamEnrollments(enrollingExam.id);
+      setEnrollments(list || []);
+      fetchExams();
+      setCandidateFile(null);
+      setCandidateValidationResult(null);
+      setEnrollTab('list');
+    } catch (err) {
+      toast.error(err.message || 'Batch enrollment failed');
+    } finally {
+      setIsBatchEnrolling(false);
     }
   };
 
@@ -574,12 +794,16 @@ export const Exams = () => {
             {new Date(row.start_time).toLocaleString()} →{' '}
             {new Date(row.end_time).toLocaleTimeString()}
           </p>
-          <div className="flex items-center gap-2 pt-0.5">
+          <div className="flex items-center gap-2 pt-0.5 flex-wrap">
             <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
               <Clock size={11} /> {row.duration_minutes} min
             </span>
             <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
               {row.total_questions} Questions
+            </span>
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-900 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+              <Award size={10} className="text-amber-600" />
+              +{row.default_marks_per_question ?? 1.0} / -{row.default_negative_marks ?? 0.0} M
             </span>
           </div>
         </div>
@@ -592,11 +816,16 @@ export const Exams = () => {
         <div className="space-y-1">
           {streamsAlloc && streamsAlloc.length > 0 ? (
             streamsAlloc.map((es, idx) => (
-              <div key={idx} className="text-[11px] text-slate-600">
+              <div key={idx} className="text-[11px] text-slate-600 flex items-center gap-1">
                 <span className="font-bold text-slate-800">
                   {es.stream_code}:
                 </span>{' '}
-                {es.question_count} Qs
+                <span>{es.question_count} Qs</span>
+                {es.marks_per_question !== null && es.marks_per_question !== undefined && (
+                  <span className="text-[10px] font-semibold text-amber-700 bg-amber-50 px-1 rounded border border-amber-200">
+                    +{es.marks_per_question}/-{es.negative_marks ?? 0}
+                  </span>
+                )}
               </div>
             ))
           ) : (
@@ -629,10 +858,20 @@ export const Exams = () => {
     {
       key: 'actions',
       header: 'Actions',
-      width: '260px',
+      width: '280px',
       align: 'right',
       render: (_, row) => (
         <div className="flex items-center justify-end gap-1.5 flex-wrap">
+          {canEditExam(row) && (
+            <Button
+              variant="outline"
+              size="xs"
+              onClick={() => handleOpenEdit(row)}
+              icon={Edit3}
+            >
+              Edit
+            </Button>
+          )}
           {row.status === 'draft' && (
             <Button
               variant="outline"
@@ -788,19 +1027,27 @@ export const Exams = () => {
         }
       />
 
-      {/* Create Exam Modal */}
+      {/* Create / Edit Exam Modal */}
       <Modal
         isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        title="Schedule New Examination"
-        subtitle="Configure timing windows, entry cutoff, pass marks, and stream difficulty quotas"
+        onClose={() => {
+          setIsCreateModalOpen(false);
+          setEditingExamId(null);
+          setEditingExam(null);
+        }}
+        title={editingExamId ? 'Edit Examination Paper' : 'Schedule New Examination'}
+        subtitle="Configure timing windows, entry cutoff, scoring & marking rules, and stream difficulty quotas"
         maxWidth="720px"
         footer={
           <div className="flex items-center justify-end gap-2 w-full">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => setIsCreateModalOpen(false)}
+              onClick={() => {
+                setIsCreateModalOpen(false);
+                setEditingExamId(null);
+                setEditingExam(null);
+              }}
               disabled={isSubmitting}
             >
               Cancel
@@ -811,12 +1058,23 @@ export const Exams = () => {
               onClick={handleSubmitCreateExam}
               isLoading={isSubmitting}
             >
-              Save Examination Paper
+              {editingExamId ? 'Update Examination Paper' : 'Save Examination Paper'}
             </Button>
           </div>
         }
       >
         <form onSubmit={handleSubmitCreateExam} className="space-y-4">
+          {editingExam?.status === 'published' && (
+            <div className="p-3 bg-blue-50/80 border border-blue-200 text-blue-900 rounded-xl text-xs flex items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span>
+                  This exam is currently <strong>Published</strong>. You can update its parameters, marking scheme, and questions until the scheduled start window ({new Date(editingExam.start_time).toLocaleDateString([], { month: 'short', day: 'numeric' })} at {new Date(editingExam.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}).
+                </span>
+              </div>
+            </div>
+          )}
+
           {formError && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-xs font-medium">
               {formError}
@@ -898,6 +1156,77 @@ export const Exams = () => {
                   </span>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Marking Scheme Configuration Section */}
+          <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200/90 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <Award className="w-3.5 h-3.5 text-amber-600" />
+                  Examination Scoring & Marking Scheme
+                </span>
+                <p className="text-[11px] text-amber-800/80">
+                  Configure marks awarded per correct response and negative penalty deducted for incorrect answers.
+                </p>
+              </div>
+              <div className="text-right text-[11px] font-semibold text-amber-900 bg-amber-100/80 px-2.5 py-1 rounded-lg border border-amber-200">
+                Estimated Total Score:{' '}
+                <strong className="text-amber-950 font-extrabold text-xs">
+                  {calculateTotalEstimatedMarks()} Marks
+                </strong>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Default Marks per Question *
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0.1"
+                  value={formData.default_marks_per_question}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      default_marks_per_question:
+                        e.target.value === '' ? '' : parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-bold text-slate-900 focus:outline-indigo-500 shadow-2xs"
+                  required
+                />
+                <span className="text-[10px] text-slate-500">
+                  Points awarded for each correct answer
+                </span>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                  Default Negative Marks *
+                </label>
+                <input
+                  type="number"
+                  step="0.25"
+                  min="0"
+                  value={formData.default_negative_marks}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      default_negative_marks:
+                        e.target.value === '' ? '' : parseFloat(e.target.value),
+                    })
+                  }
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white font-bold text-slate-900 focus:outline-indigo-500 shadow-2xs"
+                  required
+                />
+                <span className="text-[10px] text-slate-500">
+                  Penalty deducted for each wrong answer (0 = no penalty)
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1177,6 +1506,54 @@ export const Exams = () => {
                   />
                 </div>
 
+                {/* Per-stream marking override */}
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                      Marks / Question (Override):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0.1"
+                      placeholder={`Default (${formData.default_marks_per_question || 1.0})`}
+                      value={es.marks_per_question ?? ''}
+                      onChange={(e) => {
+                        const val =
+                          e.target.value === '' ? null : parseFloat(e.target.value);
+                        handleStreamMarksChange(
+                          es.stream_id,
+                          'marks_per_question',
+                          val
+                        );
+                      }}
+                      className="w-full px-2 py-1 text-xs border border-slate-200 rounded-md font-semibold text-slate-800 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-semibold text-slate-600 mb-0.5">
+                      Negative Marks (Override):
+                    </label>
+                    <input
+                      type="number"
+                      step="0.25"
+                      min="0"
+                      placeholder={`Default (${formData.default_negative_marks ?? 0.0})`}
+                      value={es.negative_marks ?? ''}
+                      onChange={(e) => {
+                        const val =
+                          e.target.value === '' ? null : parseFloat(e.target.value);
+                        handleStreamMarksChange(
+                          es.stream_id,
+                          'negative_marks',
+                          val
+                        );
+                      }}
+                      className="w-full px-2 py-1 text-xs border border-slate-200 rounded-md font-semibold text-slate-800 bg-white"
+                    />
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-100">
                   {es.difficulty_quotas.map((dq) => (
                     <div key={dq.difficulty} className="space-y-1">
@@ -1201,6 +1578,21 @@ export const Exams = () => {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-[11px] font-semibold text-slate-700">
+              Exam Instructions &amp; Candidate Guidelines
+            </label>
+            <textarea
+              rows={2}
+              value={formData.instructions || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, instructions: e.target.value })
+              }
+              placeholder="Instructions presented to the candidate on the verification screen before arena launch..."
+              className="w-full px-2.5 py-1.5 text-xs border border-slate-200 rounded-lg bg-white text-slate-800 font-medium focus:outline-indigo-500 shadow-2xs resize-none"
+            />
           </div>
 
           <div className="flex items-center gap-6 pt-1">
@@ -1374,67 +1766,339 @@ export const Exams = () => {
         onClose={() => setIsEnrollModalOpen(false)}
         title={`Candidate Registry: ${enrollingExam?.title}`}
         subtitle="Manage enrolled students authorized to take this assessment"
-        maxWidth="540px"
+        maxWidth="680px"
         footer={
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setIsEnrollModalOpen(false)}
-          >
-            Done
-          </Button>
+          <div className="flex items-center justify-between w-full">
+            <span className="text-xs text-slate-500 font-medium">
+              {enrollments.length} candidate(s) currently enrolled
+            </span>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setIsEnrollModalOpen(false)}
+            >
+              Done
+            </Button>
+          </div>
         }
       >
         <div className="space-y-4">
-          <form onSubmit={handleAddCandidate} className="flex gap-2">
-            <input
-              type="email"
-              placeholder="candidate@svarp.org"
-              value={studentEmail}
-              onChange={(e) => setStudentEmail(e.target.value)}
-              className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-[#1f3b45]"
-              required
-            />
-            <Button
-              variant="emerald"
-              size="sm"
-              type="submit"
-              isLoading={isEnrolling}
+          {/* Sub Navigation Tabs */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+            <button
+              type="button"
+              onClick={() => setEnrollTab('list')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                enrollTab === 'list'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
             >
-              Enroll Candidate
-            </Button>
-          </form>
-
-          <div className="border border-slate-200 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-500">
-                <tr>
-                  <th className="p-2.5">Student Email</th>
-                  <th className="p-2.5 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {enrollments.map((en) => (
-                  <tr key={en.student_id}>
-                    <td className="p-2.5 text-slate-800 font-medium">
-                      {en.student_email || en.student_id}
-                    </td>
-                    <td className="p-2.5 text-right">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleWithdrawCandidate(en.student_id)
-                        }
-                        className="text-rose-600 hover:text-rose-800 text-[11px] font-semibold cursor-pointer"
-                      >
-                        Withdraw
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              <Users className="w-3.5 h-3.5" />
+              Enrolled Candidates ({enrollments.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setEnrollTab('upload')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all cursor-pointer flex items-center gap-1.5 ${
+                enrollTab === 'upload'
+                  ? 'bg-[#1f3b45] text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
+            >
+              <UploadCloud className="w-3.5 h-3.5" />
+              Batch Upload (CSV / Excel)
+            </button>
           </div>
+
+          {enrollTab === 'list' ? (
+            <div className="space-y-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <div>
+                  <h4 className="text-xs font-bold text-slate-800">
+                    Single Candidate Enrollment
+                  </h4>
+                  <p className="text-[11px] text-slate-500">
+                    Add candidate by email or switch to batch upload to import a roster.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={() => setEnrollTab('upload')}
+                  icon={UploadCloud}
+                >
+                  Upload File Instead
+                </Button>
+              </div>
+
+              <form onSubmit={handleAddCandidate} className="flex gap-2">
+                <input
+                  type="email"
+                  placeholder="candidate@svarp.org"
+                  value={studentEmail}
+                  onChange={(e) => setStudentEmail(e.target.value)}
+                  className="flex-1 px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-[#1f3b45]"
+                  required
+                />
+                <Button
+                  variant="emerald"
+                  size="sm"
+                  type="submit"
+                  isLoading={isEnrolling}
+                >
+                  Enroll Candidate
+                </Button>
+              </form>
+
+              <div className="border border-slate-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-500">
+                    <tr>
+                      <th className="p-2.5">Student Email</th>
+                      <th className="p-2.5 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {enrollments.length === 0 ? (
+                      <tr>
+                        <td colSpan={2} className="p-4 text-center text-slate-400">
+                          No candidates currently enrolled.
+                        </td>
+                      </tr>
+                    ) : (
+                      enrollments.map((en) => (
+                        <tr key={en.student_id}>
+                          <td className="p-2.5 text-slate-800 font-medium">
+                            {en.student_email || en.student_id}
+                          </td>
+                          <td className="p-2.5 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleWithdrawCandidate(en.student_id)}
+                              className="text-rose-600 hover:text-rose-800 text-[11px] font-semibold cursor-pointer"
+                            >
+                              Withdraw
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Template Download & Instructions */}
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl">
+                <div className="space-y-0.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-blue-900">
+                    <FileSpreadsheet className="w-4 h-4 text-blue-700" />
+                    CSV / Excel Batch Format
+                  </div>
+                  <p className="text-[11px] text-blue-700">
+                    Upload a file with an <code>email</code> column containing student email addresses.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  onClick={handleDownloadCandidateTemplate}
+                  icon={Download}
+                >
+                  Download Sample CSV
+                </Button>
+              </div>
+
+              {/* Upload Drop Area */}
+              <div className="border-2 border-dashed border-slate-300 hover:border-[#1f3b45] transition-colors rounded-xl p-5 text-center bg-slate-50/50">
+                <input
+                  type="file"
+                  id="candidate-file-upload"
+                  accept=".csv, .xlsx, .xls"
+                  onChange={handleCandidateFileSelect}
+                  className="hidden"
+                />
+                <label
+                  htmlFor="candidate-file-upload"
+                  className="cursor-pointer flex flex-col items-center justify-center space-y-2"
+                >
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 border border-slate-200">
+                    <UploadCloud className="w-5 h-5 text-[#1f3b45]" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-[#1f3b45] hover:underline">
+                      Click to choose CSV or Excel file
+                    </span>
+                    <span className="text-xs text-slate-500"> or drag and drop</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Supported formats: <strong>.csv</strong>, <strong>.xlsx</strong>, <strong>.xls</strong>
+                  </p>
+                </label>
+                {candidateFile && (
+                  <div className="mt-3 pt-3 border-t border-slate-200 flex items-center justify-between text-xs px-2">
+                    <div className="flex items-center gap-2 truncate">
+                      <FileSpreadsheet className="w-4 h-4 text-[#1f3b45] shrink-0" />
+                      <span className="font-semibold text-slate-800 truncate">
+                        {candidateFile.name}
+                      </span>
+                      <span className="text-slate-400">
+                        ({Math.round(candidateFile.size / 1024)} KB)
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      onClick={() => document.getElementById('candidate-file-upload')?.click()}
+                    >
+                      Change File
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Validating Spinner */}
+              {isValidatingCandidateFile && (
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center space-y-2">
+                  <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-[#1f3b45] border-t-transparent" />
+                  <p className="text-xs font-semibold text-slate-700">
+                    Processing and verifying candidates against SVARP User Portal...
+                  </p>
+                </div>
+              )}
+
+              {/* Validation Results & Action Box */}
+              {candidateValidationResult && !isValidatingCandidateFile && (
+                <div className="space-y-3.5">
+                  {/* Results Summary Pills */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl text-center">
+                      <div className="text-base font-extrabold text-emerald-800">
+                        {candidateValidationResult.valid_count}
+                      </div>
+                      <div className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider">
+                        Ready to Enroll
+                      </div>
+                    </div>
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-center">
+                      <div className="text-base font-extrabold text-amber-800">
+                        {candidateValidationResult.already_enrolled_count}
+                      </div>
+                      <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider">
+                        Already Enrolled
+                      </div>
+                    </div>
+                    <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-center">
+                      <div className="text-base font-extrabold text-rose-800">
+                        {candidateValidationResult.invalid_count}
+                      </div>
+                      <div className="text-[10px] font-bold text-rose-700 uppercase tracking-wider">
+                        Invalid / Not Found
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Candidate Verification Breakdown Table */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden max-h-52 overflow-y-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 font-bold text-slate-500">
+                        <tr>
+                          <th className="p-2">Candidate</th>
+                          <th className="p-2">Status</th>
+                          <th className="p-2 text-right">Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {candidateValidationResult.valid_candidates.map((c) => (
+                          <tr key={c.email} className="bg-emerald-50/20">
+                            <td className="p-2 font-medium text-slate-800">
+                              <div>{c.email}</div>
+                              {c.full_name && (
+                                <div className="text-[10px] text-slate-500">{c.full_name}</div>
+                              )}
+                            </td>
+                            <td className="p-2">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-full">
+                                <CheckCircle2 className="w-3 h-3" />
+                                Valid
+                              </span>
+                            </td>
+                            <td className="p-2 text-right text-[11px] text-slate-500">
+                              Verified in Portal
+                            </td>
+                          </tr>
+                        ))}
+                        {candidateValidationResult.already_enrolled.map((c) => (
+                          <tr key={c.email} className="bg-amber-50/20">
+                            <td className="p-2 font-medium text-slate-800">
+                              <div>{c.email}</div>
+                              {c.full_name && (
+                                <div className="text-[10px] text-slate-500">{c.full_name}</div>
+                              )}
+                            </td>
+                            <td className="p-2">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                                <AlertTriangle className="w-3 h-3" />
+                                Enrolled
+                              </span>
+                            </td>
+                            <td className="p-2 text-right text-[11px] text-amber-700">
+                              Already in exam
+                            </td>
+                          </tr>
+                        ))}
+                        {candidateValidationResult.invalid_candidates.map((c) => (
+                          <tr key={c.email} className="bg-rose-50/20">
+                            <td className="p-2 font-medium text-slate-800 truncate max-w-[180px]">
+                              {c.email}
+                            </td>
+                            <td className="p-2">
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-100/70 px-2 py-0.5 rounded-full">
+                                <AlertTriangle className="w-3 h-3" />
+                                Invalid
+                              </span>
+                            </td>
+                            <td className="p-2 text-right text-[11px] text-rose-600 font-medium">
+                              {c.reason || 'Not Found'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Confirmation & Enrollment Trigger */}
+                  {candidateValidationResult.valid_count > 0 ? (
+                    <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-bold text-emerald-900">
+                          {candidateValidationResult.valid_count} candidate(s) ready to be enrolled
+                        </div>
+                        <div className="text-[11px] text-emerald-700">
+                          Click below to confirm and authorize these students to take this assessment.
+                        </div>
+                      </div>
+                      <Button
+                        variant="emerald"
+                        size="sm"
+                        onClick={handleBatchEnroll}
+                        isLoading={isBatchEnrolling}
+                        icon={UserCheck}
+                      >
+                        Enroll {candidateValidationResult.valid_count} Student(s)
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-slate-100 border border-slate-200 rounded-xl text-center text-xs text-slate-600">
+                      No new valid candidates available to enroll from this file.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -1460,47 +2124,76 @@ export const Exams = () => {
             Allocating paper preview...
           </div>
         ) : previewData ? (
-          <div className="space-y-3">
-            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs">
-              <span className="font-bold text-slate-800">
-                Total Allocated Questions: {previewData.items?.length || 0}
-              </span>
-              <span className="font-mono text-slate-500 text-[11px]">
-                Seed: {previewData.seed || 'random'}
-              </span>
-            </div>
-
-            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-              {previewData.items?.map((item, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-xl border border-slate-200 bg-white space-y-1.5"
-                >
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold text-slate-900">
-                      Q{idx + 1}. [{item.stream_code}]
+          (() => {
+            const questions = previewData.questions || previewData.items || [];
+            return (
+              <div className="space-y-3">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between text-xs flex-wrap gap-2">
+                  <span className="font-bold text-slate-800">
+                    Total Allocated Questions: {previewData.total_questions || questions.length}
+                  </span>
+                  <div className="flex items-center gap-2">
+                    {previewData.total_marks !== undefined && previewData.total_marks !== null && (
+                      <span className="inline-flex items-center gap-1 font-bold text-amber-900 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded">
+                        <Award size={12} className="text-amber-600" />
+                        Total Paper: {previewData.total_marks} Marks
+                      </span>
+                    )}
+                    <span className="font-mono text-slate-500 text-[11px]">
+                      Seed: {previewData.seed || 'random'}
                     </span>
-                    <span className="capitalize font-semibold text-slate-500">
-                      {item.difficulty}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-800 font-medium">
-                    {item.question_text}
-                  </p>
-                  <div className="grid grid-cols-2 gap-1.5 pt-1">
-                    {item.options?.map((opt) => (
-                      <div
-                        key={opt.option_label}
-                        className="px-2 py-1 rounded text-[11px] bg-slate-50 text-slate-700 border border-slate-100"
-                      >
-                        [{opt.option_label}] {opt.option_text}
-                      </div>
-                    ))}
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
+
+                <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                  {questions.length === 0 ? (
+                    <div className="p-6 text-center text-slate-400 text-xs italic">
+                      No questions generated for this preview.
+                    </div>
+                  ) : (
+                    questions.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3 rounded-xl border border-slate-200 bg-white space-y-1.5 shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-slate-900">
+                            Q{idx + 1}. [{item.stream_code}]
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="inline-flex items-center text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              +{item.marks ?? 1} M
+                            </span>
+                            {item.negative_marks > 0 && (
+                              <span className="inline-flex items-center text-[10px] font-bold text-rose-800 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200">
+                                -{item.negative_marks} Neg
+                              </span>
+                            )}
+                            <span className="capitalize font-semibold text-slate-500 ml-1">
+                              {item.difficulty}
+                            </span>
+                          </div>
+                        </div>
+                        <p className="text-xs text-slate-800 font-medium">
+                          {item.question_text}
+                        </p>
+                        <div className="grid grid-cols-2 gap-1.5 pt-1">
+                          {item.options?.map((opt) => (
+                            <div
+                              key={opt.option_label}
+                              className="px-2 py-1 rounded text-[11px] bg-slate-50 text-slate-700 border border-slate-100"
+                            >
+                              [{opt.option_label}] {opt.option_text}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            );
+          })()
         ) : null}
       </Modal>
     </div>

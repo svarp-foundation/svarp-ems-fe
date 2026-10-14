@@ -41,6 +41,29 @@ export const ExamInstructions = () => {
   const [error, setError] = useState(null);
   const [agreed, setAgreed] = useState(false);
   const [entering, setEntering] = useState(false);
+  const [currentTime, setCurrentTime] = useState(Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const formatCountdown = (totalSeconds) => {
+    if (totalSeconds <= 0) return '00:00';
+    const hours = Math.floor(totalSeconds / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  const startTime = exam?.start_time ? new Date(exam.start_time).getTime() : 0;
+  const isStarted = !startTime || currentTime >= startTime || Boolean(exam?.has_active_attempt);
+  const secondsUntilStart = Math.max(0, Math.floor((startTime - currentTime) / 1000));
 
   const fetchInstructions = async () => {
     try {
@@ -65,6 +88,10 @@ export const ExamInstructions = () => {
   const handleStartExam = async () => {
     if (!agreed) {
       toast.warning('Please confirm the declaration checkbox before proceeding.');
+      return;
+    }
+    if (!isStarted) {
+      toast.info(`Assessment has not started yet. Starts in ${formatCountdown(secondsUntilStart)}.`);
       return;
     }
 
@@ -197,6 +224,31 @@ export const ExamInstructions = () => {
 
       {/* Main Container */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 pt-6 space-y-6">
+        {/* Pre-Start Countdown & Readiness Banner */}
+        {!isStarted && (
+          <div className="p-4 sm:p-5 rounded-2xl bg-blue-50 border border-blue-200 text-blue-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+            <div className="flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-xl bg-blue-100 flex items-center justify-center text-blue-700 shrink-0">
+                <Clock size={22} className="animate-pulse" />
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-sm font-bold text-blue-900">
+                  Assessment Scheduled — Advance Reading Mode
+                </p>
+                <p className="text-xs text-blue-700/90 leading-relaxed">
+                  You are viewing pre-exam instructions in advance. The arena launch button will automatically activate once the countdown reaches zero.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2.5 bg-white px-3.5 py-2 rounded-xl border border-blue-200 shadow-2xs self-stretch sm:self-auto justify-center">
+              <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">Unlocks In:</span>
+              <span className="font-mono text-base font-extrabold text-blue-800">
+                {formatCountdown(secondsUntilStart)}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Banner with Exam Summary */}
         <div className="bg-gradient-to-r from-[#1f3b45] via-[#244652] to-[#2a4e5b] rounded-2xl p-6 sm:p-8 text-white shadow-md relative overflow-hidden">
           <div className="absolute right-0 top-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
@@ -554,7 +606,7 @@ export const ExamInstructions = () => {
                 <span>Mandatory Fullscreen Enforcement</span>
               </div>
               <p className="text-[11px] text-slate-600 leading-relaxed">
-                The exam arena operates exclusively in fullscreen mode. Any attempt to exit fullscreen, resize the browser, or minimize the window will trigger an immediate security alert and count as a violation incident.
+                The exam arena operates exclusively in fullscreen mode. Any attempt to exit fullscreen, resize the browser, or minimize the window will <strong>instantly lock your exam on the 1st occurrence</strong>.
               </p>
             </div>
 
@@ -564,7 +616,7 @@ export const ExamInstructions = () => {
                 <span>Strict Tab-Switch Lockout</span>
               </div>
               <p className="text-[11px] text-slate-600 leading-relaxed">
-                Switching browser tabs, opening developer console, or clicking away to other desktop applications will <strong>instantly lock your exam</strong>. Unlocking requires proctor/admin review with written justification.
+                Switching browser tabs, opening developer console, or clicking away to other desktop applications will <strong>instantly lock your exam on the 1st violation</strong>. Unlocking requires proctor/admin review with written justification.
               </p>
             </div>
 
@@ -697,17 +749,24 @@ export const ExamInstructions = () => {
           <button
             type="button"
             onClick={handleStartExam}
-            disabled={!agreed || entering}
+            disabled={!agreed || entering || !isStarted}
             className={`w-full sm:w-auto px-8 py-3 rounded-xl text-xs font-black flex items-center justify-center gap-2.5 transition-all shadow-md cursor-pointer ${
-              agreed && !entering
+              agreed && !entering && isStarted
                 ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-700/20 hover:scale-[1.01]'
-                : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                : !isStarted
+                  ? 'bg-blue-50 text-blue-800 border border-blue-200 cursor-not-allowed shadow-none'
+                  : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
             }`}
           >
             {entering ? (
               <>
                 <RotateCw size={15} className="animate-spin" />
                 <span>Entering Arena...</span>
+              </>
+            ) : !isStarted ? (
+              <>
+                <Clock size={15} className="animate-pulse text-blue-600" />
+                <span>Starts in {formatCountdown(secondsUntilStart)}</span>
               </>
             ) : (
               <>

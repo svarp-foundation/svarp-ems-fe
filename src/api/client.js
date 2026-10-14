@@ -17,6 +17,14 @@ class ApiClient {
     }
   }
 
+  _buildQueryString(params = {}) {
+    if (!params || typeof params !== 'object') return '';
+    const cleaned = Object.entries(params).filter(
+      ([_, v]) => v !== undefined && v !== null && v !== '' && v !== 'undefined'
+    );
+    return new URLSearchParams(cleaned).toString();
+  }
+
   async request(endpoint, options = {}) {
     const url = `${this.baseUrl}${endpoint}`;
     const token = this.getToken();
@@ -129,7 +137,7 @@ class ApiClient {
 
   // Stream Endpoints
   async getStreams(params = {}) {
-    const query = new URLSearchParams(params).toString();
+    const query = this._buildQueryString(params);
     const endpoint = query ? `/streams?${query}` : '/streams';
     return this.request(endpoint, { method: 'GET' });
   }
@@ -154,7 +162,7 @@ class ApiClient {
 
   // Question Bank Endpoints
   async getQuestions(params = {}) {
-    const query = new URLSearchParams(params).toString();
+    const query = this._buildQueryString(params);
     const endpoint = query ? `/questions?${query}` : '/questions';
     return this.request(endpoint, { method: 'GET' });
   }
@@ -260,7 +268,7 @@ class ApiClient {
 
   // Exam Builder Endpoints
   async getExams(params = {}) {
-    const query = new URLSearchParams(params).toString();
+    const query = this._buildQueryString(params);
     const endpoint = query ? `/exams?${query}` : '/exams';
     return this.request(endpoint, { method: 'GET' });
   }
@@ -316,6 +324,73 @@ class ApiClient {
     return this.request(`/exams/${id}/preview-paper`, { method: 'POST' });
   }
 
+  async downloadCandidateTemplate() {
+    const token = this.getToken();
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${this.baseUrl}/exams/enroll/template`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        this.setToken(null);
+        localStorage.removeItem(STORAGE_KEYS.USER);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        }
+      }
+      throw new Error('Failed to download candidate template');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'candidate_enrollment_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
+  async validateCandidateFile(examId, file) {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const token = this.getToken();
+    const headers = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${this.baseUrl}/exams/${examId}/enroll/validate-file`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      if (response.status === 401) {
+        this.setToken(null);
+        localStorage.removeItem(STORAGE_KEYS.USER);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+        }
+      }
+      const error = new Error(data.detail || 'Validation failed');
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
   // Attempt & Arena Endpoints
   async getAvailableExams() {
     return this.request('/attempts/available', { method: 'GET' });
@@ -359,7 +434,7 @@ class ApiClient {
   }
 
   async getAdminAttempts(params = {}) {
-    const query = new URLSearchParams(params).toString();
+    const query = this._buildQueryString(params);
     const endpoint = query ? `/attempts/admin/all?${query}` : '/attempts/admin/all';
     return this.request(endpoint, { method: 'GET' });
   }
@@ -424,13 +499,13 @@ class ApiClient {
 
   // Security Audit Hub Endpoints
   async getAuditLogs(params = {}) {
-    const query = new URLSearchParams(params).toString();
+    const query = this._buildQueryString(params);
     const endpoint = query ? `/audit/logs?${query}` : '/audit/logs';
     return this.request(endpoint, { method: 'GET' });
   }
 
   async getExamEvents(params = {}) {
-    const query = new URLSearchParams(params).toString();
+    const query = this._buildQueryString(params);
     const endpoint = query ? `/audit/events?${query}` : '/audit/events';
     return this.request(endpoint, { method: 'GET' });
   }

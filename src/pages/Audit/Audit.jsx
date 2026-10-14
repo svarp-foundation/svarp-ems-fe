@@ -38,21 +38,26 @@ export const Audit = () => {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      const logParams = { limit: 100 };
+      if (actionFilter) logParams.action = actionFilter;
+      if (searchActor.trim()) logParams.actor_email = searchActor.trim();
+
+      const eventParams = { limit: 100 };
+      if (eventFilter) eventParams.event_type = eventFilter;
+
       const [logsData, eventsData, statsData] = await Promise.all([
-        api
-          .getAuditLogs({
-            action: actionFilter || undefined,
-            actor_email: searchActor.trim() || undefined,
-            limit: 100,
-          })
-          .catch(() => []),
-        api
-          .getExamEvents({
-            event_type: eventFilter || undefined,
-            limit: 100,
-          })
-          .catch(() => []),
-        api.getAuditStats().catch(() => null),
+        api.getAuditLogs(logParams).catch((err) => {
+          console.error('getAuditLogs error:', err);
+          return [];
+        }),
+        api.getExamEvents(eventParams).catch((err) => {
+          console.error('getExamEvents error:', err);
+          return [];
+        }),
+        api.getAuditStats().catch((err) => {
+          console.error('getAuditStats error:', err);
+          return null;
+        }),
       ]);
 
       setLogs(Array.isArray(logsData) ? logsData : []);

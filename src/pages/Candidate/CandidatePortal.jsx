@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
@@ -19,6 +19,7 @@ import {
   Eye,
   FileText,
   BookOpen,
+  Sparkles,
 } from 'lucide-react';
 import { Modal } from '../../components/common/Modal';
 import { useToast } from '../../context/ToastContext';
@@ -31,14 +32,18 @@ export const CandidatePortal = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Live timer tick for real-time start countdown and automatic activation
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  const triggeredExamStartsRef = useRef(new Set());
+
   // Candidate Scorecard & Stream Breakdown State
   const [selectedResultExam, setSelectedResultExam] = useState(null);
   const [candidateResult, setCandidateResult] = useState(null);
   const [loadingResult, setLoadingResult] = useState(false);
 
-  const fetchExams = async () => {
+  const fetchExams = async (silent = false) => {
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setError(null);
       const data = await api.getAvailableExams();
       // Strictly show only exams that this candidate is actively enrolled in
@@ -47,15 +52,53 @@ export const CandidatePortal = () => {
       );
       setExams(enrolledOnly);
     } catch (err) {
-      setError(err.message || 'Failed to load available examinations');
+      if (!silent) setError(err.message || 'Failed to load available examinations');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchExams();
   }, []);
+
+  // Update clock every second
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(Date.now());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Auto-refresh candidate exams when an upcoming exam start time is reached
+  useEffect(() => {
+    if (!exams.length) return;
+    const now = currentTime;
+    exams.forEach((exam) => {
+      if (exam.start_time) {
+        const start = new Date(exam.start_time).getTime();
+        if (now >= start && now - start < 3000 && !triggeredExamStartsRef.current.has(exam.id)) {
+          triggeredExamStartsRef.current.add(exam.id);
+          fetchExams(true);
+        }
+      }
+    });
+  }, [currentTime, exams]);
+
+  const formatCountdown = (totalSeconds) => {
+    if (totalSeconds <= 0) return '00:00';
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const mins = Math.floor((totalSeconds % 3600) / 60);
+    const secs = totalSeconds % 60;
+    if (days > 0) {
+      return `${days}d ${hours}h ${mins}m`;
+    }
+    if (hours > 0) {
+      return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -108,7 +151,7 @@ export const CandidatePortal = () => {
       };
     }
 
-    const now = new Date().getTime();
+    const now = currentTime;
     const start = exam.start_time ? new Date(exam.start_time).getTime() : 0;
     const end = exam.end_time ? new Date(exam.end_time).getTime() : Infinity;
 
@@ -123,12 +166,15 @@ export const CandidatePortal = () => {
     }
 
     if (now < start) {
+      const secondsUntilStart = Math.max(0, Math.floor((start - now) / 1000));
       return {
         label: 'Scheduled',
         color: 'bg-blue-50 text-blue-700 border-blue-200',
         canEnter: false,
         actionText: 'Opens Soon',
         isResume: false,
+        isUpcoming: true,
+        secondsUntilStart,
       };
     }
 
@@ -228,7 +274,7 @@ export const CandidatePortal = () => {
       {/* Main Content Area */}
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-6">
         {/* Welcome & Overview Banner */}
-        <div className="bg-gradient-to-r from-[#1f3b45] to-[#2a4e5b] rounded-2xl p-6 sm:p-8 text-white shadow-md relative overflow-hidden">
+        {/* <div className="bg-gradient-to-r from-[#1f3b45] to-[#2a4e5b] rounded-2xl p-6 sm:p-8 text-white shadow-md relative overflow-hidden">
           <div className="absolute right-0 top-0 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none -mr-20 -mt-20" />
           <div className="relative z-10 max-w-2xl space-y-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[11px] font-bold border border-emerald-500/30">
@@ -242,7 +288,7 @@ export const CandidatePortal = () => {
               Your registered examinations and evaluations are listed below. Ensure you are in a quiet environment before starting your paper.
             </p>
           </div>
-        </div>
+        </div> */}
 
         {/* Quick Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
@@ -344,7 +390,9 @@ export const CandidatePortal = () => {
                       <span
                         className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold border ${status.color}`}
                       >
-                        {status.label}
+                        {status.isUpcoming
+                          ? `Scheduled • In ${formatCountdown(status.secondsUntilStart)}`
+                          : status.label}
                       </span>
                       <span className="text-[11px] font-semibold text-slate-500 flex items-center gap-1">
                         <Timer size={12} />
@@ -418,6 +466,29 @@ export const CandidatePortal = () => {
                           <span>Results Awaiting Admin Publication</span>
                         </div>
                       )
+                    ) : status.isUpcoming ? (
+                      <div className="space-y-2.5">
+                        {/* Live Countdown Indicator */}
+                        <div className="p-2.5 bg-blue-50/80 border border-blue-200/90 rounded-xl flex items-center justify-between text-xs text-blue-900 shadow-2xs">
+                          <span className="flex items-center gap-1.5 font-bold">
+                            <Clock size={13} className="text-blue-600 animate-pulse" />
+                            <span>Opens In:</span>
+                          </span>
+                          <span className="font-mono font-extrabold text-xs bg-white px-2.5 py-0.5 rounded-md border border-blue-200 text-blue-800 shadow-2xs">
+                            {formatCountdown(status.secondsUntilStart)}
+                          </span>
+                        </div>
+
+                        {/* Read Instructions Button */}
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/instructions/${exam.id}`)}
+                          className="w-full py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 bg-[#1f3b45] hover:bg-[#162a32] text-white shadow-xs cursor-pointer transition-all hover:scale-[1.01]"
+                        >
+                          <BookOpen size={14} className="text-emerald-400" />
+                          <span>Read Instructions &amp; Guidelines</span>
+                        </button>
+                      </div>
                     ) : (
                       <div className="space-y-2">
                         <button
