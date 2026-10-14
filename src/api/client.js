@@ -497,6 +497,28 @@ class ApiClient {
     window.URL.revokeObjectURL(url);
   }
 
+  async downloadExamResultsExcel(examId, examTitle = 'exam') {
+    const token = this.getToken();
+    const headers = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${this.baseUrl}/results/exam/${examId}/export-excel`, {
+      method: 'GET',
+      headers,
+    });
+    if (!res.ok) throw new Error('Failed to download Excel export');
+
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${examTitle.toLowerCase().replace(/[^a-z0-9]/g, '_')}_results.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  }
+
   // Security Audit Hub Endpoints
   async getAuditLogs(params = {}) {
     const query = this._buildQueryString(params);

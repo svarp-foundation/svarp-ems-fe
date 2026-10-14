@@ -9,6 +9,7 @@ import { SearchBar } from '../../components/common/SearchBar';
 import { StatCard } from '../../components/common/StatCard';
 import {
   Download,
+  FileSpreadsheet,
   Zap,
   CheckCircle,
   Eye,
@@ -39,6 +40,7 @@ export const Results = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [savingPublication, setSavingPublication] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const [searchStudent, setSearchStudent] = useState('');
 
   // Candidate Inspection Modal
@@ -150,6 +152,23 @@ export const Results = () => {
     }
   };
 
+  const handleExportExcel = async () => {
+    if (!selectedExamId) return;
+    try {
+      setExportingExcel(true);
+      const currentExam = exams.find((e) => e.id === selectedExamId);
+      await api.downloadExamResultsExcel(
+        selectedExamId,
+        currentExam?.title || 'exam'
+      );
+      toast.success('Results Excel workbook (.xlsx) exported successfully');
+    } catch (err) {
+      toast.error(err.message || 'Excel export failed');
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   const handleInspectCandidate = async (candidate) => {
     setInspectCandidate(candidate);
     setInspectStreamFilter('ALL');
@@ -177,6 +196,51 @@ export const Results = () => {
   );
 
   const selectedExam = exams.find((e) => e.id === selectedExamId);
+
+  // Dynamic Stream Columns for Format A (Unconsolidated Stream-wise view)
+  const streamColumns = React.useMemo(() => {
+    if (!results || results.length === 0) return [];
+    const streamMap = new Map();
+    results.forEach((row) => {
+      row.stream_details?.forEach((sd) => {
+        if (!streamMap.has(sd.stream_id)) {
+          streamMap.set(sd.stream_id, {
+            id: sd.stream_id,
+            name: sd.stream_name,
+            code: sd.stream_code,
+            maxMarks: sd.total_marks,
+          });
+        }
+      });
+    });
+    return Array.from(streamMap.values()).map((stream) => ({
+      key: `stream_${stream.id}`,
+      header: `${stream.code || stream.name} (${stream.maxMarks}m)`,
+      render: (_, row) => {
+        const sd = row.stream_details?.find((s) => s.stream_id === stream.id);
+        if (!sd) return <span className="text-slate-400 text-xs">—</span>;
+        const score = Number(sd.obtained_marks) || 0;
+        const isPositive = score > 0;
+        const isNegative = score < 0;
+        return (
+          <div className="text-xs">
+            <span
+              className={`font-bold ${
+                isPositive
+                  ? 'text-emerald-700'
+                  : isNegative
+                  ? 'text-rose-600'
+                  : 'text-slate-800'
+              }`}
+            >
+              {isPositive ? `+${score}` : score}
+            </span>
+            <span className="text-slate-400 font-normal"> / {sd.total_marks}</span>
+          </div>
+        );
+      },
+    }));
+  }, [results]);
 
   const columns = [
     {
@@ -249,67 +313,33 @@ export const Results = () => {
         />
       ),
     },
+    ...streamColumns,
     {
-      key: 'breakdown',
-      header: 'Breakdown & Streams',
+      key: 'accuracy',
+      header: 'Question Accuracy',
       render: (_, row) => (
-        <div className="space-y-1.5 py-1 min-w-[210px]">
-          {/* Aggregate counts */}
-          <div className="flex items-center gap-2 text-xs">
-            <span
-              className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60"
-              title="Correct Questions"
-            >
-              <span>✓</span>
-              <span>{row.correct_count}</span>
-            </span>
-            <span
-              className="inline-flex items-center gap-1 font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200/60"
-              title="Incorrect Questions"
-            >
-              <span>✗</span>
-              <span>{row.incorrect_count}</span>
-            </span>
-            <span
-              className="inline-flex items-center gap-1 font-semibold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60"
-              title="Unanswered Questions"
-            >
-              <span>—</span>
-              <span>{row.unanswered_count}</span>
-            </span>
-          </div>
-
-          {/* Stream-wise performance badges */}
-          {row.stream_details && row.stream_details.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1 max-w-sm pt-0.5">
-              {row.stream_details.map((sd) => {
-                const score = Number(sd.obtained_marks) || 0;
-                const isPositive = score > 0;
-                const isNegative = score < 0;
-                return (
-                  <button
-                    key={sd.stream_id}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setStreamCandidate(row);
-                    }}
-                    title={`${sd.stream_name}: ${sd.obtained_marks}/${sd.total_marks} marks (✓${sd.correct_count} ✗${sd.incorrect_count} —${sd.unanswered_count}) • Click for subject breakdown`}
-                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium border transition-colors cursor-pointer hover:shadow-2xs ${
-                      isPositive
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                        : isNegative
-                        ? 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span className="font-bold">{sd.stream_code || sd.stream_name}:</span>
-                    <span>{isPositive ? `+${score}` : score}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
+        <div className="flex items-center gap-1.5 text-xs py-1">
+          <span
+            className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60"
+            title="Correct Questions"
+          >
+            <span>✓</span>
+            <span>{row.correct_count}</span>
+          </span>
+          <span
+            className="inline-flex items-center gap-1 font-semibold text-rose-600 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200/60"
+            title="Incorrect Questions"
+          >
+            <span>✗</span>
+            <span>{row.incorrect_count}</span>
+          </span>
+          <span
+            className="inline-flex items-center gap-1 font-semibold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200/60"
+            title="Unanswered Questions"
+          >
+            <span>—</span>
+            <span>{row.unanswered_count}</span>
+          </span>
         </div>
       ),
     },
@@ -344,7 +374,7 @@ export const Results = () => {
     <div className="space-y-6">
       <PageHeader
         title="Scoring, Results &amp; Analytics"
-        subtitle="Automated evaluation, score release gatekeeper, performance distribution, and CSV export"
+        subtitle="Automated evaluation, score release gatekeeper, performance distribution, and stream-wise export"
         actions={
           <>
             <Button
@@ -357,13 +387,22 @@ export const Results = () => {
               Recalculate Scores
             </Button>
             <Button
-              variant="primary"
+              variant="outline"
               size="sm"
               onClick={handleExportCSV}
               isLoading={exporting}
               icon={Download}
             >
               Export CSV
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleExportExcel}
+              isLoading={exportingExcel}
+              icon={FileSpreadsheet}
+            >
+              Export Excel (.xlsx)
             </Button>
           </>
         }
