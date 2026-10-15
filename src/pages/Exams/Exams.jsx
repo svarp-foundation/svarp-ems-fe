@@ -27,6 +27,11 @@ import {
   Edit3,
   Award,
   Info,
+  FileText,
+  Printer,
+  Copy,
+  Check,
+  BookOpen,
 } from 'lucide-react';
 import { useToast } from '../../context/ToastContext';
 
@@ -85,6 +90,12 @@ export const Exams = () => {
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
   const [previewData, setPreviewData] = useState(null);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
+  // Exam Syllabus Specification Modal
+  const [isSyllabusModalOpen, setIsSyllabusModalOpen] = useState(false);
+  const [syllabusData, setSyllabusData] = useState(null);
+  const [isLoadingSyllabus, setIsLoadingSyllabus] = useState(false);
+  const [copiedSyllabus, setCopiedSyllabus] = useState(false);
 
   // Load streams
   useEffect(() => {
@@ -765,6 +776,43 @@ export const Exams = () => {
     }
   };
 
+  const handleOpenSyllabus = async (exam) => {
+    setIsSyllabusModalOpen(true);
+    setIsLoadingSyllabus(true);
+    setSyllabusData(null);
+    setCopiedSyllabus(false);
+    try {
+      const data = await api.getExamSyllabus(exam.id);
+      setSyllabusData(data);
+    } catch (err) {
+      toast.error(err.message || 'Failed to generate exam syllabus');
+    } finally {
+      setIsLoadingSyllabus(false);
+    }
+  };
+
+  const handleCopySyllabus = () => {
+    if (!syllabusData?.markdown_content) return;
+    navigator.clipboard.writeText(syllabusData.markdown_content);
+    setCopiedSyllabus(true);
+    toast.success('Syllabus copied to clipboard in markdown format!');
+    setTimeout(() => setCopiedSyllabus(false), 2500);
+  };
+
+  const handleDownloadSyllabus = () => {
+    if (!syllabusData?.markdown_content) return;
+    const blob = new Blob([syllabusData.markdown_content], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${(syllabusData.title || 'exam').toLowerCase().replace(/[^a-z0-9]/g, '_')}_syllabus.md`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast.success('Syllabus downloaded (.md)');
+  };
+
   const handleDeleteExam = async (examId) => {
     const ok = await confirm({
       title: 'Delete Draft Exam',
@@ -908,6 +956,14 @@ export const Exams = () => {
             icon={Eye}
           >
             Preview
+          </Button>
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => handleOpenSyllabus(row)}
+            icon={FileText}
+          >
+            Syllabus
           </Button>
           {row.status !== 'in_progress' && row.status !== 'completed' && (
             <Button
@@ -2194,6 +2250,266 @@ export const Exams = () => {
               </div>
             );
           })()
+        ) : null}
+      </Modal>
+
+      {/* Examination Syllabus Specification Modal */}
+      <Modal
+        isOpen={isSyllabusModalOpen}
+        onClose={() => setIsSyllabusModalOpen(false)}
+        title="Examination Syllabus & Assessment Blueprint"
+        subtitle="Official curriculum specifications, sectional allocations, scoring weights, and topics"
+        maxWidth="840px"
+        footer={
+          <div className="flex items-center justify-between w-full flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCopySyllabus}
+                icon={copiedSyllabus ? Check : Copy}
+              >
+                {copiedSyllabus ? 'Copied to Clipboard!' : 'Copy Syllabus'}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadSyllabus}
+                icon={Download}
+              >
+                Download (.md)
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => window.print()}
+                icon={Printer}
+              >
+                Print / Save PDF
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setIsSyllabusModalOpen(false)}
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        {isLoadingSyllabus ? (
+          <div className="p-12 text-center space-y-3">
+            <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            <p className="text-xs text-slate-500 font-medium">
+              Generating official examination syllabus &amp; assessment blueprint...
+            </p>
+          </div>
+        ) : syllabusData ? (
+          <div className="space-y-6 max-h-[75vh] overflow-y-auto pr-1">
+            {/* Header Identity Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-slate-900 to-[#1f3b45] text-white space-y-3 shadow-md">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <span className="text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30">
+                  Official Assessment Specification
+                </span>
+                <span className="text-[11px] text-slate-300 font-mono">
+                  SVARP Assessment Engine
+                </span>
+              </div>
+              <div>
+                <h3 className="text-base sm:text-lg font-black text-white">
+                  {syllabusData.title}
+                </h3>
+                {syllabusData.description && (
+                  <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                    {syllabusData.description}
+                  </p>
+                )}
+              </div>
+
+              {/* 5 Key Metric Badges */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-2 border-t border-white/10">
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10 text-center">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Duration
+                  </span>
+                  <span className="text-xs font-black text-white mt-0.5 block">
+                    {syllabusData.duration_minutes} Mins
+                  </span>
+                </div>
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10 text-center">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Questions
+                  </span>
+                  <span className="text-xs font-black text-white mt-0.5 block">
+                    {syllabusData.total_questions} MCQs
+                  </span>
+                </div>
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10 text-center">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Total Marks
+                  </span>
+                  <span className="text-xs font-black text-emerald-300 mt-0.5 block">
+                    {syllabusData.total_marks} Marks
+                  </span>
+                </div>
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10 text-center">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Marking
+                  </span>
+                  <span className="text-xs font-black text-amber-300 mt-0.5 block">
+                    +{syllabusData.default_marks_per_question} / -{syllabusData.default_negative_marks}
+                  </span>
+                </div>
+                <div className="bg-white/5 rounded-xl p-2.5 border border-white/10 text-center col-span-2 sm:col-span-1">
+                  <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                    Pass Cutoff
+                  </span>
+                  <span className="text-xs font-black text-sky-300 mt-0.5 block">
+                    {syllabusData.pass_percentage || 50.0}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sectional Distribution Table */}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2">
+                <Award size={15} className="text-[#1f3b45]" />
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Sectional Distribution &amp; Weightage
+                </h4>
+              </div>
+
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold text-[11px]">
+                      <th className="py-2.5 px-3">Section Code</th>
+                      <th className="py-2.5 px-3">Subject Stream</th>
+                      <th className="py-2.5 px-3 text-center">Questions</th>
+                      <th className="py-2.5 px-3 text-center">Marks</th>
+                      <th className="py-2.5 px-3 text-center">Weightage</th>
+                      <th className="py-2.5 px-3 text-right">Difficulty (E / M / H)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {syllabusData.streams?.map((st) => (
+                      <tr key={st.stream_id} className="hover:bg-slate-50/60">
+                        <td className="py-2 px-3 font-mono font-bold text-slate-700">
+                          {st.stream_code}
+                        </td>
+                        <td className="py-2 px-3 font-semibold text-slate-900">
+                          {st.stream_name}
+                        </td>
+                        <td className="py-2 px-3 text-center font-bold text-slate-800">
+                          {st.question_count}
+                        </td>
+                        <td className="py-2 px-3 text-center font-bold text-emerald-700">
+                          {st.total_marks}
+                        </td>
+                        <td className="py-2 px-3 text-center font-semibold text-slate-600">
+                          {st.weightage_pct}%
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-[11px] text-slate-600">
+                          <span className="text-emerald-700 font-bold">{st.difficulty_distribution?.easy || 0}E</span>
+                          <span className="text-slate-300 mx-1">/</span>
+                          <span className="text-amber-700 font-bold">{st.difficulty_distribution?.medium || 0}M</span>
+                          <span className="text-slate-300 mx-1">/</span>
+                          <span className="text-rose-700 font-bold">{st.difficulty_distribution?.hard || 0}H</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Detailed Module Curriculum & Core Topics */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <BookOpen size={15} className="text-[#1f3b45]" />
+                <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  Detailed Curriculum &amp; Domain Topics
+                </h4>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {syllabusData.streams?.map((st) => (
+                  <div
+                    key={st.stream_id}
+                    className="p-3.5 rounded-xl border border-slate-200 bg-white space-y-2 shadow-2xs hover:border-slate-300 transition-colors"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <span className="font-bold text-slate-900 text-xs block">
+                          {st.stream_name}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400 font-bold">
+                          Code: {st.stream_code}
+                        </span>
+                      </div>
+                      <span className="inline-flex items-center text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        {st.question_count} Qs ({st.total_marks} M)
+                      </span>
+                    </div>
+
+                    {st.description && (
+                      <p className="text-[11px] text-slate-500 italic">
+                        {st.description}
+                      </p>
+                    )}
+
+                    <div className="pt-1.5 border-t border-slate-100">
+                      <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Key Competencies &amp; Topics
+                      </span>
+                      {st.topics && st.topics.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {st.topics.map((topic, i) => (
+                            <span
+                              key={i}
+                              className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200/80"
+                            >
+                              {topic}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-500">
+                          Core subject fundamentals, practical problem solving, and analytical principles.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Assessment Rules & Guidelines */}
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs text-slate-700">
+              <span className="font-bold text-slate-900 text-[11px] uppercase tracking-wider block">
+                Assessment Protocol &amp; Exam Guidelines
+              </span>
+              <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-600 leading-relaxed">
+                <li>
+                  <strong>Pattern:</strong> All questions are objective Multiple Choice Questions (Single Option Correct).
+                </li>
+                <li>
+                  <strong>Timing:</strong> Continuous timer of {syllabusData.duration_minutes} minutes from the instant of paper commencement.
+                </li>
+                <li>
+                  <strong>Proctoring:</strong> Fullscreen mode is enforced. Leaving the exam window or switching tabs triggers an instant interruption lock on the 1st violation.
+                </li>
+                <li>
+                  <strong>Autosave:</strong> Responses are debounced and securely synced with the SVARP cloud infrastructure instantaneously.
+                </li>
+              </ul>
+            </div>
+          </div>
         ) : null}
       </Modal>
     </div>

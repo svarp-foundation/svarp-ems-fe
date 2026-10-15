@@ -277,6 +277,10 @@ class ApiClient {
     return this.request(`/exams/${id}`, { method: 'GET' });
   }
 
+  async getExamSyllabus(id) {
+    return this.request(`/exams/${id}/syllabus`, { method: 'GET' });
+  }
+
   async createExam(examData) {
     return this.request('/exams', {
       method: 'POST',
