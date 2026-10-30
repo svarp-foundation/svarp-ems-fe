@@ -61,10 +61,24 @@ class ApiClient {
 
       if (!response.ok) {
         if (response.status === 401 && !endpoint.includes('/auth/login')) {
-          this.setToken(null);
-          localStorage.removeItem(STORAGE_KEYS.USER);
-          if (typeof window !== 'undefined') {
-            window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+          const detailStr = (data && data.detail) ? String(data.detail) : '';
+          const isExplicitRevocation = 
+            detailStr.includes('Session invalidated') ||
+            detailStr.includes('revoked') ||
+            detailStr.includes('Session expired') ||
+            detailStr.includes('Insufficient permissions');
+
+          const isExamHeartbeatOrSave = 
+            endpoint.includes('/attempts/') && 
+            (endpoint.includes('/heartbeat') || endpoint.includes('/answers'));
+
+          // Do not wipe credentials and trigger immediate logout on transient exam background calls
+          if (isExplicitRevocation || !isExamHeartbeatOrSave) {
+            this.setToken(null);
+            localStorage.removeItem(STORAGE_KEYS.USER);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+            }
           }
         }
 
@@ -314,6 +328,7 @@ class ApiClient {
   async enrollStudents(id, students) {
     return this.request(`/exams/${id}/enroll`, {
       method: 'POST',
+      timeout: 60000,
       body: JSON.stringify({ students }),
     });
   }
@@ -372,27 +387,42 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${this.baseUrl}/exams/${examId}/enroll/validate-file`, {
-      method: 'POST',
-      headers,
-      body: formData,
-    });
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 60000);
 
-    const data = await response.json();
-    if (!response.ok) {
-      if (response.status === 401) {
-        this.setToken(null);
-        localStorage.removeItem(STORAGE_KEYS.USER);
-        if (typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+    try {
+      const response = await fetch(`${this.baseUrl}/exams/${examId}/enroll/validate-file`, {
+        method: 'POST',
+        headers,
+        body: formData,
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 401) {
+          this.setToken(null);
+          localStorage.removeItem(STORAGE_KEYS.USER);
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+          }
         }
+        const error = new Error(data.detail || 'Validation failed');
+        error.status = response.status;
+        error.data = data;
+        throw error;
       }
-      const error = new Error(data.detail || 'Validation failed');
-      error.status = response.status;
-      error.data = data;
-      throw error;
+      return data;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      if (err.name === 'AbortError') {
+        const timeoutError = new Error('Candidate file validation timed out. Please check file size or network connection.');
+        timeoutError.status = 408;
+        throw timeoutError;
+      }
+      throw err;
     }
-    return data;
   }
 
   // Attempt & Arena Endpoints

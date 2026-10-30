@@ -177,7 +177,7 @@ export const ExamArena = () => {
   useEffect(() => {
     if (!attempt || isSubmitted) return;
 
-    const intervalMs = isLocked ? 5000 : 25000;
+    const intervalMs = isLocked ? 15000 : 25000;
     heartbeatTimerRef.current = setInterval(async () => {
       try {
         const hb = await api.sendAttemptHeartbeat(attempt.attempt_id);
